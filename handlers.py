@@ -9,12 +9,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Send simple welcome message"""
     help_text = (
         "💊 Pill Reminder Bot\n\n"
-        "📋 Commands:\n\n"
+        "📋 Commands:\n"
         "/add_reminder [HH:MM...] [Timezone] \"Reminder Name\"\n"
         "Example: /add_reminder 08:00 20:00 America/New_York \"Daily Pills\"\n\n"
         "/show_reminders - List active reminders\n"
-        "/remove_reminder - Delete a reminder\n\n"
-        "Click buttons to mark reminders as done ✅"
+        "/remove_reminder [ID] - Delete reminder by ID\n\n"
+        "✅ Use buttons to mark reminders as done"
     )
     await update.message.reply_text(help_text)
 
@@ -60,12 +60,11 @@ async def add_reminder(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❗ Please specify at least one time!")
         return
 
-    # Save to database
+    # Save to database and get reminder ID
     chat_id = update.effective_chat.id
-    db.add_reminder(chat_id, valid_times, timezone, name)
+    reminder_id = db.add_reminder(chat_id, valid_times, timezone, name)
     
     # Schedule jobs
-    reminder_id = db.get_last_reminder_id(chat_id)
     for time_str in valid_times:
         hour, minute = map(int, time_str.split(':'))
         time = datetime.time(hour, minute, tzinfo=ZoneInfo(timezone))
@@ -140,7 +139,7 @@ async def show_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_text(text.strip())
 
 async def show_reminders(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Show active reminders"""
+    """Show active reminders with their IDs"""
     chat_id = update.effective_chat.id
     reminders = db.get_reminders(chat_id)
     
@@ -148,12 +147,38 @@ async def show_reminders(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("🔔 No active reminders")
         return
     
-    text = "📋 *Active Reminders:*\n\n"
-    for idx, rem in enumerate(reminders, 1):
+    text = "📋 Active Reminders:\n\n"
+    for rem in reminders:
+        safe_name = rem['name'].replace('*', '\\*').replace('_', '\\_').replace('`', '\\`')
         text += (
-            f"{idx}. {rem['name']}\n"
-            f"   🕒 {', '.join(rem['times'])}\n"
-            f"   🌍 {rem['timezone']}\n\n"
+            f"📌 ID: {rem['id']}\n"
+            f"📝 {safe_name}\n"
+            f"🕒 {', '.join(rem['times'])}\n"
+            f"🌍 {rem['timezone']}\n\n"
         )
     
-    await update.message.reply_text(text, parse_mode='Markdown')
+    await update.message.reply_text(text)
+
+async def remove_reminder(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Remove a reminder by ID"""
+    if not context.args:
+        await update.message.reply_text(
+            "❌ Please provide a reminder ID\n"
+            "Example: /remove_reminder 123"
+        )
+        return
+    
+    try:
+        reminder_id = int(context.args[0])
+    except ValueError:
+        await update.message.reply_text("❌ Invalid reminder ID. Please use a number.")
+        return
+    
+    chat_id = update.effective_chat.id
+    if db.remove_reminder(reminder_id, chat_id):
+        # Remove scheduled jobs
+        for job in context.job_queue.get_jobs_by_name(f"reminder_{reminder_id}"):
+            job.schedule_removal()
+        await update.message.reply_text("✅ Reminder removed successfully!")
+    else:
+        await update.message.reply_text("❌ Reminder not found or not owned by this chat.")

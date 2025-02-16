@@ -30,9 +30,10 @@ def main():
     application.add_handler(CommandHandler('start', handlers.start))
     application.add_handler(CommandHandler('add_reminder', handlers.add_reminder))
     application.add_handler(CommandHandler('show_reminders', handlers.show_reminders))
+    application.add_handler(CommandHandler('remove_reminder', handlers.remove_reminder))
     application.add_handler(CallbackQueryHandler(handlers.mark_done, pattern='^mark_'))
     application.add_handler(CallbackQueryHandler(handlers.show_history, pattern='^history_'))
-    
+
     # Run bot
     application.run_polling()
 
